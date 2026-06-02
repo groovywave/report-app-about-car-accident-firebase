@@ -2,14 +2,14 @@
 // ▼▼▼【重要】設定値を更新してください ▼▼▼
 const APP_SETTINGS = {
   // ★★★ ここにCloud FunctionsのURLを設定してください ★★★
-  CLOUD_FUNCTION_URL: 'https://report-gqacqvfgfa-an.a.run.app',
+  CLOUD_FUNCTION_URL: 'https://report-o6me7546wq-an.a.run.app',
   // ★★★ ここにLIFF IDを設定してください ★★★
-  LIFF_ID: '2008161427-jAeXYzdQ',
+  LIFF_ID: '2010242484-mtfoxuhe',
 
   MAX_RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000,
   REQUEST_TIMEOUT: 30000,
-  MAX_FILE_SIZE: 5 * 1024 * 1024,
+  MAX_FILE_SIZE: 10 * 1024 * 1024,
   ALLOWED_FILE_TYPES: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
   DETAILS_MAX_LENGTH: 100
 };
@@ -489,6 +489,8 @@ document.addEventListener('DOMContentLoaded', async function () {
       previewEl.style.display = 'none';
     }
     if (inputEl) inputEl.value = '';
+
+    updateSubmitButtonState();
   }
 
   // === 写真入力処理（画像圧縮機能付き） ===
@@ -570,6 +572,11 @@ document.addEventListener('DOMContentLoaded', async function () {
       if (!value || value.trim() === '') {
         return { isValid: false, message: field.name.includes('itude') ? '場所が指定されていません。地図を動かして位置を合わせてください。' : `${field.label}が入力されていません。` };
       }
+    }
+
+    // 写真投稿の必須バリデーション（遠景・近景の両方が必須）
+    if (!currentPhotos.distant.data || !currentPhotos.close.data) {
+      return { isValid: false, message: '写真の投稿が必要です。遠景および近景の両方の写真を必ずアップロードしてください。' };
     }
 
     // 「その他」が選択されている場合のみ、詳細を必須チェックする
@@ -686,10 +693,26 @@ document.addEventListener('DOMContentLoaded', async function () {
     const selectedType = formData.get('type');
     const isOther = selectedType === 'その他';
     const detailsVal = (elements.detailsTextarea?.value || '').trim();
+    const hasDistant = !!currentPhotos.distant.data;
+    const hasClose = !!currentPhotos.close.data;
+    const hasBothPhotos = hasDistant && hasClose;
 
-    const canSubmit = selectedType && (!isOther || (isOther && detailsVal.length > 0));
+    const canSubmit = selectedType && (!isOther || (isOther && detailsVal.length > 0)) && hasBothPhotos;
 
     elements.btnSubmit.disabled = !canSubmit;
-    elements.btnSubmit.textContent = canSubmit ? 'この内容で通報する' : '不具合の種類を選択してください';
+
+    if (!selectedType) {
+      elements.btnSubmit.textContent = '連絡状況を選択してください';
+    } else if (isOther && detailsVal.length === 0) {
+      elements.btnSubmit.textContent = '詳細を入力してください';
+    } else if (!hasDistant && !hasClose) {
+      elements.btnSubmit.textContent = '遠景と近景の写真をアップロードしてください';
+    } else if (!hasDistant) {
+      elements.btnSubmit.textContent = '遠景写真をアップロードしてください';
+    } else if (!hasClose) {
+      elements.btnSubmit.textContent = '近景写真をアップロードしてください';
+    } else {
+      elements.btnSubmit.textContent = 'この内容で通報する';
+    }
   }
 });
