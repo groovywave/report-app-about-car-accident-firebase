@@ -54,8 +54,12 @@ document.addEventListener('DOMContentLoaded', async function () {
       btnSubmit: document.getElementById('btn-submit'),
       loader: document.getElementById('loader'),
       photoDistantInput: document.getElementById('photo-distant'),
+      btnAlbumDistant: document.getElementById('btn-album-distant'),
+      btnCameraDistant: document.getElementById('btn-camera-distant'),
       imagePreviewDistant: document.getElementById('image-preview-distant'),
       photoCloseInput: document.getElementById('photo-close'),
+      btnAlbumClose: document.getElementById('btn-album-close'),
+      btnCameraClose: document.getElementById('btn-camera-close'),
       imagePreviewClose: document.getElementById('image-preview-close'),
       lineStatus: document.getElementById('line-status'),
       lineStatusText: document.getElementById('line-status-text'),
@@ -226,10 +230,35 @@ document.addEventListener('DOMContentLoaded', async function () {
     // 初期状態のチェックも実行（必須表示含めて更新）
     handleTypeChange();
 
-    // 写真プレビュー
+    // 写真選択・カメラ起動ボタンのイベントリスナー
+    if (elements.btnAlbumDistant && elements.photoDistantInput) {
+      elements.btnAlbumDistant.addEventListener('click', function () {
+        elements.photoDistantInput.removeAttribute('capture');
+        elements.photoDistantInput.click();
+      });
+    }
+    if (elements.btnCameraDistant && elements.photoDistantInput) {
+      elements.btnCameraDistant.addEventListener('click', function () {
+        elements.photoDistantInput.setAttribute('capture', 'environment');
+        elements.photoDistantInput.click();
+      });
+    }
     if (elements.photoDistantInput) {
       elements.photoDistantInput.addEventListener('change', function () {
         handlePhotoInput(this, 'distant', elements);
+      });
+    }
+
+    if (elements.btnAlbumClose && elements.photoCloseInput) {
+      elements.btnAlbumClose.addEventListener('click', function () {
+        elements.photoCloseInput.removeAttribute('capture');
+        elements.photoCloseInput.click();
+      });
+    }
+    if (elements.btnCameraClose && elements.photoCloseInput) {
+      elements.btnCameraClose.addEventListener('click', function () {
+        elements.photoCloseInput.setAttribute('capture', 'environment');
+        elements.photoCloseInput.click();
       });
     }
     if (elements.photoCloseInput) {
@@ -366,111 +395,54 @@ document.addEventListener('DOMContentLoaded', async function () {
     setTimeout(() => notification.remove(), duration);
   }
 
-  // 画像をビットマップ化してから再エンコード（JPEG）する共通関数
-  async function bitmapizeAndEncode(fileOrDataUrl, options = {}) {
-    const { maxWidth = 1280, maxHeight = 1280, quality = 0.85, mimeType = 'image/jpeg', background = '#fff' } = options;
-
-    // 入力をBlobに正規化
-    let srcBlob;
-    if (fileOrDataUrl instanceof Blob) {
-      srcBlob = fileOrDataUrl;
-    } else if (typeof fileOrDataUrl === 'string') {
-      // dataURLやHTTP URL想定（dataURLのみを主に想定）
-      const res = await fetch(fileOrDataUrl);
-      srcBlob = await res.blob();
-    } else {
-      throw new Error('bitmapizeAndEncode: 未対応の入力タイプです');
-    }
-
-    // デコードしてビットマップへ
-    let bmp, width, height;
-    try {
-      // createImageBitmapが使える場合はEXIFの向き適用に期待
-      // Safari等ではオプション未対応のためtry-catchでフォールバック
-      bmp = await createImageBitmap(srcBlob, { imageOrientation: 'from-image' });
-      width = bmp.width;
-      height = bmp.height;
-    } catch {
-      // フォールバック: Image要素 + ObjectURL
-      const url = URL.createObjectURL(srcBlob);
-      try {
-        const img = await new Promise((resolve, reject) => {
-          const i = new Image();
-          i.onload = () => resolve(i);
-          i.onerror = reject;
-          i.src = url;
-        });
-        width = img.naturalWidth || img.width;
-        height = img.naturalHeight || img.height;
-
-        // Canvasに描画してビットマップ化
-        const cvs = document.createElement('canvas');
-        cvs.width = width;
-        cvs.height = height;
-        const ctx = cvs.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-
-        // CanvasからImageBitmapへ（対応ブラウザのみ）
-        if (window.createImageBitmap) {
-          bmp = await createImageBitmap(cvs);
-        } else {
-          // 最低限、既にキャンバスにラスタライズ済みなのでこのまま扱う
-          bmp = cvs;
-        }
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    }
-
-    // サイズ調整（アスペクト比維持）
-    let targetW = width;
-    let targetH = height;
-    if (targetW > targetH) {
-      if (targetW > maxWidth) {
-        targetH = Math.round((maxWidth / targetW) * targetH);
-        targetW = maxWidth;
-      }
-    } else {
-      if (targetH > maxHeight) {
-        targetW = Math.round((maxHeight / targetH) * targetW);
-        targetH = maxHeight;
-      }
-    }
-
-    // 描画用キャンバス（OffscreenCanvasがあれば利用）
-    const hasOffscreen = typeof OffscreenCanvas !== 'undefined';
-    const cvs = hasOffscreen ? new OffscreenCanvas(targetW, targetH) : document.createElement('canvas');
-    if (!hasOffscreen) {
-      cvs.width = targetW;
-      cvs.height = targetH;
-    }
-    const ctx = cvs.getContext('2d');
-
-    // 透明PNG/GIF対策で背景を塗る
-    ctx.clearRect(0, 0, targetW, targetH);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = background;
-    ctx.fillRect(0, 0, targetW, targetH);
-    ctx.drawImage(bmp, 0, 0, targetW, targetH);
-
-    // エンコード（JPEG）
-    if (cvs.convertToBlob) {
-      // OffscreenCanvas
-      const blob = await cvs.convertToBlob({ type: mimeType, quality });
-      return await blobToDataURL(blob);
-    } else {
-      // HTMLCanvasElement
-      const dataUrl = cvs.toDataURL(mimeType, quality);
-      return dataUrl;
-    }
-  }
-
-  function blobToDataURL(blob) {
+  // 画像をキャンバスで縮小し、JPEGのDataURL形式で取得する共通関数
+  function resizeAndEncodeImage(file, options = {}) {
+    const { maxWidth = 1280, maxHeight = 1280, quality = 0.85 } = options;
     return new Promise((resolve, reject) => {
-      const fr = new FileReader();
-      fr.onload = () => resolve(fr.result);
-      fr.onerror = reject;
-      fr.readAsDataURL(blob);
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = function () {
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+
+        // アスペクト比を維持して縮小
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((maxWidth / width) * height);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((maxHeight / height) * width);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        // 背景を白で塗りつぶす（透明部分対策）
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        try {
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          URL.revokeObjectURL(url);
+          resolve(dataUrl);
+        } catch (err) {
+          URL.revokeObjectURL(url);
+          reject(err);
+        }
+      };
+      img.onerror = function (err) {
+        URL.revokeObjectURL(url);
+        reject(new Error('画像の読み込みに失敗しました。'));
+      };
+      img.src = url;
     });
   }
 
@@ -505,24 +477,29 @@ document.addEventListener('DOMContentLoaded', async function () {
         return;
       }
 
-      // ファイル形式のチェックもそのまま活かす
-      if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
+      // ファイル形式のチェック（MIMEタイプ、または拡張子で判定）
+      const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic'];
+      const fileExtension = file.name ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
+      const isAllowedType = CONFIG.ALLOWED_FILE_TYPES.includes(file.type) || 
+                            allowedExtensions.includes(fileExtension) || 
+                            file.type === '' || 
+                            file.type === 'application/octet-stream';
+
+      if (!isAllowedType) {
         showNotification('対応していないファイル形式です。', 'error');
         updatePhoto(null, null, type, elements);
         return;
       }
 
-      // 必ずビットマップ化→再エンコード
-      bitmapizeAndEncode(file, {
+      // キャンバスによる縮小・再エンコード
+      resizeAndEncodeImage(file, {
         maxWidth: 1280,
         maxHeight: 1280,
-        quality: 0.85,
-        mimeType: 'image/jpeg',
-        background: '#fff'
+        quality: 0.85
       })
         .then((compressedBase64) => {
           updatePhoto(compressedBase64, 'image/jpeg', type, elements);
-          console.log(`画像再エンコード完了（bitmap→jpeg, ${type}）: ${Math.round(compressedBase64.length / 1024)} KB`);
+          console.log(`画像再エンコード完了（jpeg, ${type}）: ${Math.round(compressedBase64.length / 1024)} KB`);
         })
         .catch((err) => {
           console.error(err);

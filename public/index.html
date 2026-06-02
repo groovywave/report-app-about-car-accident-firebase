@@ -74,24 +74,30 @@
                 
                 <!-- 遠景写真 -->
                 <div class="photo-section" style="margin-bottom: 15px;">
-                    <label for="photo-distant" style="display: block; font-size: 14px; margin-bottom: 5px; color: #555;">写真(遠景)</label>
+                    <label style="display: block; font-size: 14px; margin-bottom: 5px; color: #555;">写真(遠景)</label>
                     <div class="photo-controls">
-                        <label for="photo-distant" class="button-like-input">
-                            <i class="fas fa-file-image"></i> ファイルを選択
-                        </label>
-                        <input type="file" id="photo-distant" name="photo-distant" accept="image/*" style="display: none;">
+                        <button type="button" id="btn-album-distant" class="button-like-input album-btn">
+                            <i class="fas fa-images"></i> アルバムから選択
+                        </button>
+                        <button type="button" id="btn-camera-distant" class="button-like-input camera-btn">
+                            <i class="fas fa-camera"></i> カメラを起動
+                        </button>
+                        <input type="file" id="photo-distant" name="photo-distant" accept="image/*" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; opacity: 0;">
                     </div>
                     <img id="image-preview-distant" src="#" alt="遠景写真プレビュー"/>
                 </div>
 
                 <!-- 近景写真 -->
                 <div class="photo-section">
-                    <label for="photo-close" style="display: block; font-size: 14px; margin-bottom: 5px; color: #555;">写真(近景)</label>
+                    <label style="display: block; font-size: 14px; margin-bottom: 5px; color: #555;">写真(近景)</label>
                     <div class="photo-controls">
-                        <label for="photo-close" class="button-like-input">
-                            <i class="fas fa-file-image"></i> ファイルを選択
-                        </label>
-                        <input type="file" id="photo-close" name="photo-close" accept="image/*" style="display: none;">
+                        <button type="button" id="btn-album-close" class="button-like-input album-btn">
+                            <i class="fas fa-images"></i> アルバムから選択
+                        </button>
+                        <button type="button" id="btn-camera-close" class="button-like-input camera-btn">
+                            <i class="fas fa-camera"></i> カメラを起動
+                        </button>
+                        <input type="file" id="photo-close" name="photo-close" accept="image/*" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; opacity: 0;">
                     </div>
                     <img id="image-preview-close" src="#" alt="近景写真プレビュー"/>
                 </div>
