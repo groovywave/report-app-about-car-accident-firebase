@@ -150,7 +150,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
   }
 
-  // === 地図初期化関数（1分以内スマホキャッシュ活用＆フォールバック取得版） ===
+  // === 地図初期化関数 ===
   function initializeMap(elements) {
     L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
       attribution: "地理院タイル（GSI）",
@@ -167,42 +167,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     elements.map.on('move', updateCenterCoords);
+    updateCenterCoords();
 
-    const CACHE_LIMIT_MS = 1 * 60 * 1000; // 1分（60,000ミリ秒）
-
-    // 1. ローカルストレージからの復元（1分以内優先、エラー時は過去位置もフォールバック利用）
-    function applyLocalStorageCache(ignoreTimeLimit = false) {
-      const cachedLat = localStorage.getItem('last_known_lat');
-      const cachedLng = localStorage.getItem('last_known_lng');
-      const cachedTime = parseInt(localStorage.getItem('last_known_time') || '0', 10);
-      const now = Date.now();
-
-      if (cachedLat && cachedLng) {
-        const isWithin1Min = (now - cachedTime < CACHE_LIMIT_MS);
-        if (isWithin1Min || ignoreTimeLimit) {
-          const lat = parseFloat(cachedLat);
-          const lng = parseFloat(cachedLng);
-          if (!isNaN(lat) && !isNaN(lng)) {
-            elements.map.setView([lat, lng], 18);
-            console.log(`スマホのlocalStorageキャッシュ（${isWithin1Min ? '1分以内' : '過去の記録'}）を適用しました:`, lat, lng);
-            return { success: true, isRecent: isWithin1Min };
-          }
-        }
-      }
-      return { success: false, isRecent: false };
-    }
-
-    const initialCache = applyLocalStorageCache(false);
-    if (!initialCache.success) {
-      updateCenterCoords();
-    }
-
-    // 2. 位置情報の取得（自動取得時は1分キャッシュ・ボタンタップ時は最新GPS強制取得）
-    function requestCurrentPosition(forceFresh = false) {
+    // 位置情報の取得（キチンと現在地が取得できる高精度直接取得版）
+    function fetchCurrentLocation(isManual = false) {
       if (!navigator.geolocation) {
-        if (!initialCache.success) {
-          showNotification('お使いのブラウザは位置情報サービスに対応していません。', 'warning');
-        }
+        showNotification('お使いのブラウザは位置情報サービスに対応していません。', 'warning');
         return;
       }
 
@@ -211,99 +181,50 @@ document.addEventListener('DOMContentLoaded', async function () {
         elements.btnRelocate.disabled = true;
       }
 
-      const maxAge = forceFresh ? 0 : CACHE_LIMIT_MS;
-      const timeoutMs = forceFresh ? 20000 : 15000; // スマホ/LIFF用に余裕を持ったタイムアウト設定（15-20秒）
-
-      // 高精度オプション（手動タップ時はmaximumAge:0でリアルタイム計測）
-      const highAccOptions = {
-        enableHighAccuracy: true,
-        timeout: timeoutMs,
-        maximumAge: maxAge
-      };
-
-      // 低精度オプション（フォールバック用）
-      const lowAccOptions = {
-        enableHighAccuracy: false,
-        timeout: timeoutMs,
-        maximumAge: maxAge
-      };
-
-      function resetBtnState() {
-        if (elements.btnRelocate) {
-          elements.btnRelocate.classList.remove('loading');
-          elements.btnRelocate.disabled = false;
-        }
+      if (isManual) {
+        showNotification('現在地を取得中...', 'info', 2000);
       }
 
-      function onSuccess(pos) {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        elements.map.setView([lat, lng], 18);
-
-        // タイムスタンプ付きでローカルストレージに保存
-        localStorage.setItem('last_known_lat', lat);
-        localStorage.setItem('last_known_lng', lng);
-        localStorage.setItem('last_known_time', Date.now());
-
-        resetBtnState();
-
-        if (forceFresh) {
-          showNotification('最新の現在地を取得しました。', 'success');
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          elements.map.setView([pos.coords.latitude, pos.coords.longitude], 18);
+          if (elements.btnRelocate) {
+            elements.btnRelocate.classList.remove('loading');
+            elements.btnRelocate.disabled = false;
+          }
+          if (isManual) {
+            showNotification('最新の現在地を取得しました。', 'success');
+          }
+        },
+        function (error) {
+          console.warn('位置情報の取得に失敗しました:', error);
+          if (elements.btnRelocate) {
+            elements.btnRelocate.classList.remove('loading');
+            elements.btnRelocate.disabled = false;
+          }
+          showNotification('現在地の取得に失敗したか、時間がかかっています。手動で地図を動かしてください。', 'warning');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: isManual ? 0 : 10000
         }
-        console.log('現在位置の取得に成功しました:', lat, lng, `(精度: ${pos.coords.accuracy}m)`);
-      }
-
-      function onErrorHigh(err) {
-        console.warn('高精度での現在地取得に失敗。低精度設定で再試行します:', err);
-        navigator.geolocation.getCurrentPosition(onSuccess, onErrorFinal, lowAccOptions);
-      }
-
-      function onErrorFinal(err) {
-        resetBtnState();
-
-        console.warn('現在地の取得に失敗しました:', err);
-
-        // まず1分以内のキャッシュを探す
-        let cacheResult = applyLocalStorageCache(false);
-        if (cacheResult.success) {
-          showNotification('最新位置の取得に失敗したため、1分以内のキャッシュ位置を表示しています。', 'info');
-          return;
-        }
-
-        // 1分以内のキャッシュが無ければ、過去の保存位置でも復元を試みる
-        cacheResult = applyLocalStorageCache(true);
-        if (cacheResult.success) {
-          showNotification('現在地の自動取得に失敗したため、前回記録された位置を表示しています。手動で微調整してください。', 'warning');
-          return;
-        }
-
-        // キャッシュが全く存在しない（初起動時など）場合のエラー表示
-        let message = '現在地の取得に失敗しました。手動で地図を動かして位置を調整してください。';
-        if (err.code === err.PERMISSION_DENIED) {
-          message = '位置情報の利用が許可されていません。スマホ・LINEの「位置情報」設定をご確認ください。';
-        }
-        showNotification(message, 'warning');
-      }
-
-      navigator.geolocation.getCurrentPosition(onSuccess, onErrorHigh, highAccOptions);
+      );
     }
 
-    // 初回の自動取得を実行
-    requestCurrentPosition(false);
+    // アプリ起動時に自動で現在地を取得する
+    fetchCurrentLocation(false);
 
-    // 手動再取得ボタンのイベントリスナー（Leafletマップによるイベント遮断を防止）
+    // 手動再取得ボタン（現在地取得ボタン）が存在する場合はイベント設定
     if (elements.btnRelocate) {
       if (typeof L !== 'undefined' && L.DomEvent) {
         L.DomEvent.disableClickPropagation(elements.btnRelocate);
         L.DomEvent.disableScrollPropagation(elements.btnRelocate);
       }
-
       elements.btnRelocate.addEventListener('click', function (e) {
         e.stopPropagation();
         e.preventDefault();
-        console.log('現在地取得ボタンがタップされました');
-        showNotification('現在地を取得中...', 'info', 2000);
-        requestCurrentPosition(true);
+        fetchCurrentLocation(true);
       });
     }
   }
