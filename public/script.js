@@ -208,6 +208,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
       if (elements.btnRelocate) {
         elements.btnRelocate.classList.add('loading');
+        elements.btnRelocate.disabled = true;
       }
 
       const maxAge = forceFresh ? 0 : CACHE_LIMIT_MS;
@@ -227,6 +228,13 @@ document.addEventListener('DOMContentLoaded', async function () {
         maximumAge: maxAge
       };
 
+      function resetBtnState() {
+        if (elements.btnRelocate) {
+          elements.btnRelocate.classList.remove('loading');
+          elements.btnRelocate.disabled = false;
+        }
+      }
+
       function onSuccess(pos) {
         const lat = pos.coords.latitude;
         const lng = pos.coords.longitude;
@@ -237,9 +245,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         localStorage.setItem('last_known_lng', lng);
         localStorage.setItem('last_known_time', Date.now());
 
-        if (elements.btnRelocate) {
-          elements.btnRelocate.classList.remove('loading');
-        }
+        resetBtnState();
+
         if (forceFresh) {
           showNotification('最新の現在地を取得しました。', 'success');
         }
@@ -252,9 +259,8 @@ document.addEventListener('DOMContentLoaded', async function () {
       }
 
       function onErrorFinal(err) {
-        if (elements.btnRelocate) {
-          elements.btnRelocate.classList.remove('loading');
-        }
+        resetBtnState();
+
         console.warn('現在地の取得に失敗しました:', err);
 
         // まず1分以内のキャッシュを探す
@@ -285,9 +291,18 @@ document.addEventListener('DOMContentLoaded', async function () {
     // 初回の自動取得を実行
     requestCurrentPosition(false);
 
-    // 手動再取得ボタンのイベントリスナー（ボタン選択時は新鮮な最新GPSを強制取得）
+    // 手動再取得ボタンのイベントリスナー（Leafletマップによるイベント遮断を防止）
     if (elements.btnRelocate) {
-      elements.btnRelocate.addEventListener('click', function () {
+      if (typeof L !== 'undefined' && L.DomEvent) {
+        L.DomEvent.disableClickPropagation(elements.btnRelocate);
+        L.DomEvent.disableScrollPropagation(elements.btnRelocate);
+      }
+
+      elements.btnRelocate.addEventListener('click', function (e) {
+        e.stopPropagation();
+        e.preventDefault();
+        console.log('現在地取得ボタンがタップされました');
+        showNotification('現在地を取得中...', 'info', 2000);
         requestCurrentPosition(true);
       });
     }

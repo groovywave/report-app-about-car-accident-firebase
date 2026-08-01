@@ -58,8 +58,9 @@ textarea::placeholder { color: #6c757d; font-style: italic; }
 #map-wrapper { position: relative; width: 100%; height: 300px; border: 2px solid #e9ecef; border-radius: 8px; overflow: hidden; margin-bottom: 15px; background-color: #f8f9fa; }
 #map { width: 100%; height: 100%; z-index: 1; }
 #center-pin { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -100%); font-size: 24px; color: #e74c3c; z-index: 1000; pointer-events: none; text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3); }
-.relocate-btn { position: absolute; bottom: 10px; right: 10px; z-index: 1000; background-color: #ffffff; color: #333333; border: 2px solid rgba(0, 0, 0, 0.2); border-radius: 6px; padding: 6px 12px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 5px; transition: all 0.2s ease; }
+.relocate-btn { position: absolute; bottom: 10px; right: 10px; z-index: 2000; background-color: #ffffff; color: #333333; border: 2px solid rgba(0, 0, 0, 0.2); border-radius: 6px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; align-items: center; gap: 5px; transition: all 0.2s ease; user-select: none; -webkit-tap-highlight-color: transparent; }
 .relocate-btn:hover { background-color: #f4f4f4; border-color: #3498db; color: #3498db; }
+.relocate-btn:disabled { opacity: 0.7; cursor: not-allowed; }
 .relocate-btn.loading i { animation: spin 1s linear infinite; }
 #coords-display { padding: 10px 12px; background-color: #f8f9fa; border: 1px solid #e9ecef; border-radius: 6px; font-size: 14px; color: #495057; text-align: center; font-family: 'Courier New', monospace; }
 
