@@ -1,17 +1,21 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>事故報告フォーム</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <link rel="stylesheet" href="style.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <!-- LIFF SDK追加 -->
     <script defer charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <script defer src="script.js"></script>
 </head>
+
 <body>
     <!-- ローディング画面 -->
     <div id="loader" class="loader-overlay hidden">
@@ -63,7 +67,7 @@
                     詳細（１００文字まで）
                     <span class="label-note" id="details-required-note"></span>
                 </label>
-                <textarea id="details" name="details" rows="4" placeholder="例：直径20cm程度の穴ぼこ" maxlength="100"></textarea>
+                <textarea id="details" name="details" rows="4" placeholder="例：ガードレール損傷有り" maxlength="100"></textarea>
             </div>
 
             <div class="form-group">
@@ -71,7 +75,7 @@
                     3. 現場の写真（車のナンバー等は写さない)
                     <span class="label-note" id="photo-required-note">（必須 - 遠景・近景の両方をアップロード）</span>
                 </label>
-                
+
                 <!-- 遠景写真 -->
                 <div class="photo-section" style="margin-bottom: 15px;">
                     <label style="display: block; font-size: 14px; margin-bottom: 5px; color: #555;">写真(遠景)</label>
@@ -82,9 +86,10 @@
                         <button type="button" id="btn-camera-distant" class="button-like-input camera-btn">
                             <i class="fas fa-camera"></i> カメラを起動
                         </button>
-                        <input type="file" id="photo-distant" name="photo-distant" accept="image/*" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; opacity: 0;">
+                        <input type="file" id="photo-distant" name="photo-distant" accept="image/*"
+                            style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; opacity: 0;">
                     </div>
-                    <img id="image-preview-distant" src="#" alt="遠景写真プレビュー"/>
+                    <img id="image-preview-distant" src="#" alt="遠景写真プレビュー" />
                 </div>
 
                 <!-- 近景写真 -->
@@ -97,9 +102,10 @@
                         <button type="button" id="btn-camera-close" class="button-like-input camera-btn">
                             <i class="fas fa-camera"></i> カメラを起動
                         </button>
-                        <input type="file" id="photo-close" name="photo-close" accept="image/*" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; opacity: 0;">
+                        <input type="file" id="photo-close" name="photo-close" accept="image/*"
+                            style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; opacity: 0;">
                     </div>
-                    <img id="image-preview-close" src="#" alt="近景写真プレビュー"/>
+                    <img id="image-preview-close" src="#" alt="近景写真プレビュー" />
                 </div>
             </div>
 
@@ -121,4 +127,5 @@
         </form>
     </div>
 </body>
+
 </html>
