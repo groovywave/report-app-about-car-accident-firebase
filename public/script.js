@@ -50,6 +50,7 @@ document.addEventListener('DOMContentLoaded', async function () {
       coordsDisplay: document.getElementById('coords-display'),
       latInput: document.getElementById('latitude'),
       lngInput: document.getElementById('longitude'),
+      btnRelocate: document.getElementById('btn-relocate'),
       form: document.getElementById('report-form'),
       btnSubmit: document.getElementById('btn-submit'),
       loader: document.getElementById('loader'),
@@ -149,7 +150,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
   }
 
-  // === 地図初期化関数 ===
+  // === 地図初期化関数（1分以内スマホキャッシュ活用＆フォールバック取得版） ===
   function initializeMap(elements) {
     L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
       attribution: "地理院タイル（GSI）",
@@ -166,26 +167,112 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     elements.map.on('move', updateCenterCoords);
-    updateCenterCoords();
 
-    // 既存機能：アプリ起動時に自動で現在地を取得する
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        function (pos) {
-          elements.map.setView([pos.coords.latitude, pos.coords.longitude], 18);
-        },
-        function (error) {
-          console.warn('位置情報の取得に失敗しました:', error);
-          showNotification('現在地の取得に失敗したか、時間がかかっています。手動で地図を動かしてください。', 'warning');
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 10000
+    const CACHE_LIMIT_MS = 1 * 60 * 1000; // 1分（60,000ミリ秒）
+
+    // 1. ローカルストレージ（1分以内のキャッシュ）からの復元
+    function applyLocalStorageCache() {
+      const cachedLat = localStorage.getItem('last_known_lat');
+      const cachedLng = localStorage.getItem('last_known_lng');
+      const cachedTime = parseInt(localStorage.getItem('last_known_time') || '0', 10);
+      const now = Date.now();
+
+      if (cachedLat && cachedLng && (now - cachedTime < CACHE_LIMIT_MS)) {
+        const lat = parseFloat(cachedLat);
+        const lng = parseFloat(cachedLng);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          elements.map.setView([lat, lng], 18);
+          console.log('スマホのlocalStorageキャッシュ（1分以内の最新位置）を適用しました:', lat, lng);
+          return true;
         }
-      );
+      }
+      return false;
     }
 
+    const hasValidLocalCache = applyLocalStorageCache();
+    if (!hasValidLocalCache) {
+      updateCenterCoords();
+    }
+
+    // 2. 位置情報の取得（1分以内のOS/ブラウザキャッシュ利用 + 高精度・低精度リトライ）
+    function requestCurrentPosition() {
+      if (!navigator.geolocation) {
+        if (!hasValidLocalCache) {
+          showNotification('お使いのブラウザは位置情報サービスに対応していません。', 'warning');
+        }
+        return;
+      }
+
+      if (elements.btnRelocate) {
+        elements.btnRelocate.classList.add('loading');
+      }
+
+      // 高精度オプション（maximumAge: 60秒 = スマホ/OSの1分以内キャッシュも活用）
+      const highAccOptions = {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: CACHE_LIMIT_MS
+      };
+
+      // 低精度オプション（高精度が失敗した場合のフォールバック）
+      const lowAccOptions = {
+        enableHighAccuracy: false,
+        timeout: 10000,
+        maximumAge: CACHE_LIMIT_MS
+      };
+
+      function onSuccess(pos) {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        elements.map.setView([lat, lng], 18);
+
+        // 1分制限付きタイムスタンプでローカルストレージに保存
+        localStorage.setItem('last_known_lat', lat);
+        localStorage.setItem('last_known_lng', lng);
+        localStorage.setItem('last_known_time', Date.now());
+
+        if (elements.btnRelocate) {
+          elements.btnRelocate.classList.remove('loading');
+        }
+        console.log('現在位置の取得に成功しました:', lat, lng);
+      }
+
+      function onErrorHigh(err) {
+        console.warn('高精度での現在地取得に失敗。低精度設定で再試行します:', err);
+        // 高精度取得に失敗した場合は低精度オプションで試行
+        navigator.geolocation.getCurrentPosition(onSuccess, onErrorFinal, lowAccOptions);
+      }
+
+      function onErrorFinal(err) {
+        if (elements.btnRelocate) {
+          elements.btnRelocate.classList.remove('loading');
+        }
+        console.warn('現在地の取得に失敗しました:', err);
+
+        const hasLocalCacheNow = applyLocalStorageCache();
+        if (!hasLocalCacheNow) {
+          let message = '現在地の取得に失敗しました。手動で地図を動かして位置を調整してください。';
+          if (err.code === err.PERMISSION_DENIED) {
+            message = '位置情報の利用が許可されていません。ブラウザの位置情報設定をご確認ください。';
+          }
+          showNotification(message, 'warning');
+        } else {
+          showNotification('最新位置の取得に失敗したため、1分以内のキャッシュ位置を表示しています。', 'info');
+        }
+      }
+
+      navigator.geolocation.getCurrentPosition(onSuccess, onErrorHigh, highAccOptions);
+    }
+
+    // 初回の自動取得を実行
+    requestCurrentPosition();
+
+    // 手動再取得ボタンのイベントリスナー
+    if (elements.btnRelocate) {
+      elements.btnRelocate.addEventListener('click', function () {
+        requestCurrentPosition();
+      });
+    }
   }
 
   // === フォーム機能初期化 ===
