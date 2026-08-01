@@ -150,7 +150,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
   }
 
-  // === 地図初期化関数 ===
+  // === 地図初期化関数（監視報告アプリ完全同一版） ===
   function initializeMap(elements) {
     L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
       attribution: "地理院タイル（GSI）",
@@ -169,86 +169,28 @@ document.addEventListener('DOMContentLoaded', async function () {
     elements.map.on('move', updateCenterCoords);
     updateCenterCoords();
 
-    // 位置情報の取得（スマホ＝高精度GPS、PC＝高精度失敗時に低精度ネットワークフォールバック）
-    function fetchCurrentLocation(isManual = false) {
-      if (!navigator.geolocation) {
-        showNotification('お使いのブラウザは位置情報サービスに対応していません。', 'warning');
-        return;
-      }
-
-      if (elements.btnRelocate) {
-        elements.btnRelocate.classList.add('loading');
-        elements.btnRelocate.disabled = true;
-      }
-
-      if (isManual) {
-        showNotification('現在地を取得中...', 'info', 2000);
-      }
-
-      function onSuccess(pos) {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        const accuracy = pos.coords.accuracy;
-
-        elements.map.setView([lat, lng], 18);
-
-        if (elements.btnRelocate) {
-          elements.btnRelocate.classList.remove('loading');
-          elements.btnRelocate.disabled = false;
-        }
-
-        if (isManual) {
-          if (accuracy > 200) {
-            showNotification(`現在地を取得しましたが、誤差が大きいため（約${Math.round(accuracy)}m）手動で地図を微調整してください。`, 'warning');
-          } else {
-            showNotification('最新の現在地を取得しました。', 'success');
-          }
-        }
-        console.log(`位置情報取得成功: 緯度=${lat}, 経度=${lng}, 誤差=${accuracy}m`);
-      }
-
-      function onErrorHigh(error) {
-        console.warn('高精度位置情報の取得に失敗（PC環境等の可能性）。低精度オプションで再試行します:', error);
-        // PC等のGPSが無い環境用に低精度（ネットワーク/IP位置）でリトライ
-        navigator.geolocation.getCurrentPosition(
-          onSuccess,
-          onErrorFinal,
-          { enableHighAccuracy: false, timeout: 10000, maximumAge: isManual ? 0 : 10000 }
-        );
-      }
-
-      function onErrorFinal(error) {
-        console.warn('位置情報の取得に失敗しました:', error);
-        if (elements.btnRelocate) {
-          elements.btnRelocate.classList.remove('loading');
-          elements.btnRelocate.disabled = false;
-        }
-        showNotification('現在地の取得に失敗したか、時間がかかっています。手動で地図を動かしてください。', 'warning');
-      }
-
-      // まず高精度（スマホGPS用）で試行
+    // 既存機能：アプリ起動時に自動で現在地を取得する（※監視報告アプリと100%同じコード）
+    if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        onSuccess,
-        onErrorHigh,
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: isManual ? 0 : 10000 }
+        function (pos) {
+          elements.map.setView([pos.coords.latitude, pos.coords.longitude], 18);
+        },
+        function (error) {
+          console.warn('位置情報の取得に失敗しました:', error);
+          showNotification('現在地の取得に失敗したか、時間がかかっています。手動で地図を動かしてください。', 'warning');
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 10000
+        }
       );
     }
 
-    // アプリ起動時に自動で現在地を取得する
-    fetchCurrentLocation(false);
-
-    // 手動再取得ボタン（現在地取得ボタン）が存在する場合はイベント設定
-    if (elements.btnRelocate) {
-      if (typeof L !== 'undefined' && L.DomEvent) {
-        L.DomEvent.disableClickPropagation(elements.btnRelocate);
-        L.DomEvent.disableScrollPropagation(elements.btnRelocate);
-      }
-      elements.btnRelocate.addEventListener('click', function (e) {
-        e.stopPropagation();
-        e.preventDefault();
-        fetchCurrentLocation(true);
-      });
-    }
+    /* ▼▼▼ 以下は監視報告アプリと異なる追加機能（一時的にすべてコメントアウト） ▼▼▼
+    // 低精度フォールバック・手動ボタン用関数など
+    // if (elements.btnRelocate) { ... }
+    ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ */
   }
 
   // === フォーム機能初期化 ===
