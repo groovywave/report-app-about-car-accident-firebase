@@ -170,34 +170,37 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     const CACHE_LIMIT_MS = 1 * 60 * 1000; // 1分（60,000ミリ秒）
 
-    // 1. ローカルストレージ（1分以内のキャッシュ）からの復元
-    function applyLocalStorageCache() {
+    // 1. ローカルストレージからの復元（1分以内優先、エラー時は過去位置もフォールバック利用）
+    function applyLocalStorageCache(ignoreTimeLimit = false) {
       const cachedLat = localStorage.getItem('last_known_lat');
       const cachedLng = localStorage.getItem('last_known_lng');
       const cachedTime = parseInt(localStorage.getItem('last_known_time') || '0', 10);
       const now = Date.now();
 
-      if (cachedLat && cachedLng && (now - cachedTime < CACHE_LIMIT_MS)) {
-        const lat = parseFloat(cachedLat);
-        const lng = parseFloat(cachedLng);
-        if (!isNaN(lat) && !isNaN(lng)) {
-          elements.map.setView([lat, lng], 18);
-          console.log('スマホのlocalStorageキャッシュ（1分以内の最新位置）を適用しました:', lat, lng);
-          return true;
+      if (cachedLat && cachedLng) {
+        const isWithin1Min = (now - cachedTime < CACHE_LIMIT_MS);
+        if (isWithin1Min || ignoreTimeLimit) {
+          const lat = parseFloat(cachedLat);
+          const lng = parseFloat(cachedLng);
+          if (!isNaN(lat) && !isNaN(lng)) {
+            elements.map.setView([lat, lng], 18);
+            console.log(`スマホのlocalStorageキャッシュ（${isWithin1Min ? '1分以内' : '過去の記録'}）を適用しました:`, lat, lng);
+            return { success: true, isRecent: isWithin1Min };
+          }
         }
       }
-      return false;
+      return { success: false, isRecent: false };
     }
 
-    const hasValidLocalCache = applyLocalStorageCache();
-    if (!hasValidLocalCache) {
+    const initialCache = applyLocalStorageCache(false);
+    if (!initialCache.success) {
       updateCenterCoords();
     }
 
-    // 2. 位置情報の取得（1分以内のOS/ブラウザキャッシュ利用 + 高精度・低精度リトライ）
-    function requestCurrentPosition() {
+    // 2. 位置情報の取得（自動取得時は1分キャッシュ・ボタンタップ時は最新GPS強制取得）
+    function requestCurrentPosition(forceFresh = false) {
       if (!navigator.geolocation) {
-        if (!hasValidLocalCache) {
+        if (!initialCache.success) {
           showNotification('お使いのブラウザは位置情報サービスに対応していません。', 'warning');
         }
         return;
@@ -207,18 +210,21 @@ document.addEventListener('DOMContentLoaded', async function () {
         elements.btnRelocate.classList.add('loading');
       }
 
-      // 高精度オプション（maximumAge: 60秒 = スマホ/OSの1分以内キャッシュも活用）
+      const maxAge = forceFresh ? 0 : CACHE_LIMIT_MS;
+      const timeoutMs = forceFresh ? 20000 : 15000; // スマホ/LIFF用に余裕を持ったタイムアウト設定（15-20秒）
+
+      // 高精度オプション（手動タップ時はmaximumAge:0でリアルタイム計測）
       const highAccOptions = {
         enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: CACHE_LIMIT_MS
+        timeout: timeoutMs,
+        maximumAge: maxAge
       };
 
-      // 低精度オプション（高精度が失敗した場合のフォールバック）
+      // 低精度オプション（フォールバック用）
       const lowAccOptions = {
         enableHighAccuracy: false,
-        timeout: 10000,
-        maximumAge: CACHE_LIMIT_MS
+        timeout: timeoutMs,
+        maximumAge: maxAge
       };
 
       function onSuccess(pos) {
@@ -226,7 +232,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         const lng = pos.coords.longitude;
         elements.map.setView([lat, lng], 18);
 
-        // 1分制限付きタイムスタンプでローカルストレージに保存
+        // タイムスタンプ付きでローカルストレージに保存
         localStorage.setItem('last_known_lat', lat);
         localStorage.setItem('last_known_lng', lng);
         localStorage.setItem('last_known_time', Date.now());
@@ -234,12 +240,14 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (elements.btnRelocate) {
           elements.btnRelocate.classList.remove('loading');
         }
-        console.log('現在位置の取得に成功しました:', lat, lng);
+        if (forceFresh) {
+          showNotification('最新の現在地を取得しました。', 'success');
+        }
+        console.log('現在位置の取得に成功しました:', lat, lng, `(精度: ${pos.coords.accuracy}m)`);
       }
 
       function onErrorHigh(err) {
         console.warn('高精度での現在地取得に失敗。低精度設定で再試行します:', err);
-        // 高精度取得に失敗した場合は低精度オプションで試行
         navigator.geolocation.getCurrentPosition(onSuccess, onErrorFinal, lowAccOptions);
       }
 
@@ -249,28 +257,38 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
         console.warn('現在地の取得に失敗しました:', err);
 
-        const hasLocalCacheNow = applyLocalStorageCache();
-        if (!hasLocalCacheNow) {
-          let message = '現在地の取得に失敗しました。手動で地図を動かして位置を調整してください。';
-          if (err.code === err.PERMISSION_DENIED) {
-            message = '位置情報の利用が許可されていません。ブラウザの位置情報設定をご確認ください。';
-          }
-          showNotification(message, 'warning');
-        } else {
+        // まず1分以内のキャッシュを探す
+        let cacheResult = applyLocalStorageCache(false);
+        if (cacheResult.success) {
           showNotification('最新位置の取得に失敗したため、1分以内のキャッシュ位置を表示しています。', 'info');
+          return;
         }
+
+        // 1分以内のキャッシュが無ければ、過去の保存位置でも復元を試みる
+        cacheResult = applyLocalStorageCache(true);
+        if (cacheResult.success) {
+          showNotification('現在地の自動取得に失敗したため、前回記録された位置を表示しています。手動で微調整してください。', 'warning');
+          return;
+        }
+
+        // キャッシュが全く存在しない（初起動時など）場合のエラー表示
+        let message = '現在地の取得に失敗しました。手動で地図を動かして位置を調整してください。';
+        if (err.code === err.PERMISSION_DENIED) {
+          message = '位置情報の利用が許可されていません。スマホ・LINEの「位置情報」設定をご確認ください。';
+        }
+        showNotification(message, 'warning');
       }
 
       navigator.geolocation.getCurrentPosition(onSuccess, onErrorHigh, highAccOptions);
     }
 
     // 初回の自動取得を実行
-    requestCurrentPosition();
+    requestCurrentPosition(false);
 
-    // 手動再取得ボタンのイベントリスナー
+    // 手動再取得ボタンのイベントリスナー（ボタン選択時は新鮮な最新GPSを強制取得）
     if (elements.btnRelocate) {
       elements.btnRelocate.addEventListener('click', function () {
-        requestCurrentPosition();
+        requestCurrentPosition(true);
       });
     }
   }
