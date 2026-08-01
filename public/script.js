@@ -50,7 +50,6 @@ document.addEventListener('DOMContentLoaded', async function () {
       coordsDisplay: document.getElementById('coords-display'),
       latInput: document.getElementById('latitude'),
       lngInput: document.getElementById('longitude'),
-      btnRelocate: document.getElementById('btn-relocate'),
       form: document.getElementById('report-form'),
       btnSubmit: document.getElementById('btn-submit'),
       loader: document.getElementById('loader'),
@@ -72,8 +71,8 @@ document.addEventListener('DOMContentLoaded', async function () {
       typeRadios: document.querySelectorAll('input[name="type"]') // 異常の種類ラジオボタン（すべて）
     };
 
-    // === LIFF初期化（完了を待ってから地図を初期化） ===
-    await initializeLIFF();
+    // === LIFF初期化 ===
+    initializeLIFF();
 
     // === 地図の初期化 ===
     initializeMap(elements);
@@ -150,7 +149,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
   }
 
-  // === 地図初期化関数（監視報告アプリ完全同一版） ===
+  // === 地図初期化関数 ===
   function initializeMap(elements) {
     L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
       attribution: "地理院タイル（GSI）",
@@ -169,7 +168,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     elements.map.on('move', updateCenterCoords);
     updateCenterCoords();
 
-    // 既存機能：アプリ起動時に自動で現在地を取得する（※監視報告アプリと100%同じコード）
+    // 既存機能：アプリ起動時に自動で現在地を取得する
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         function (pos) {
@@ -187,10 +186,6 @@ document.addEventListener('DOMContentLoaded', async function () {
       );
     }
 
-    /* ▼▼▼ 以下は監視報告アプリと異なる追加機能（一時的にすべてコメントアウト） ▼▼▼
-    // 低精度フォールバック・手動ボタン用関数など
-    // if (elements.btnRelocate) { ... }
-    ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲ */
   }
 
   // === フォーム機能初期化 ===
