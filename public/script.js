@@ -169,7 +169,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     elements.map.on('move', updateCenterCoords);
     updateCenterCoords();
 
-    // 位置情報の取得（キチンと現在地が取得できる高精度直接取得版）
+    // 位置情報の取得（スマホ＝高精度GPS、PC＝高精度失敗時に低精度ネットワークフォールバック）
     function fetchCurrentLocation(isManual = false) {
       if (!navigator.geolocation) {
         showNotification('お使いのブラウザは位置情報サービスに対応していません。', 'warning');
@@ -185,30 +185,52 @@ document.addEventListener('DOMContentLoaded', async function () {
         showNotification('現在地を取得中...', 'info', 2000);
       }
 
-      navigator.geolocation.getCurrentPosition(
-        function (pos) {
-          elements.map.setView([pos.coords.latitude, pos.coords.longitude], 18);
-          if (elements.btnRelocate) {
-            elements.btnRelocate.classList.remove('loading');
-            elements.btnRelocate.disabled = false;
-          }
-          if (isManual) {
+      function onSuccess(pos) {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const accuracy = pos.coords.accuracy;
+
+        elements.map.setView([lat, lng], 18);
+
+        if (elements.btnRelocate) {
+          elements.btnRelocate.classList.remove('loading');
+          elements.btnRelocate.disabled = false;
+        }
+
+        if (isManual) {
+          if (accuracy > 200) {
+            showNotification(`現在地を取得しましたが、誤差が大きいため（約${Math.round(accuracy)}m）手動で地図を微調整してください。`, 'warning');
+          } else {
             showNotification('最新の現在地を取得しました。', 'success');
           }
-        },
-        function (error) {
-          console.warn('位置情報の取得に失敗しました:', error);
-          if (elements.btnRelocate) {
-            elements.btnRelocate.classList.remove('loading');
-            elements.btnRelocate.disabled = false;
-          }
-          showNotification('現在地の取得に失敗したか、時間がかかっています。手動で地図を動かしてください。', 'warning');
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: isManual ? 0 : 10000
         }
+        console.log(`位置情報取得成功: 緯度=${lat}, 経度=${lng}, 誤差=${accuracy}m`);
+      }
+
+      function onErrorHigh(error) {
+        console.warn('高精度位置情報の取得に失敗（PC環境等の可能性）。低精度オプションで再試行します:', error);
+        // PC等のGPSが無い環境用に低精度（ネットワーク/IP位置）でリトライ
+        navigator.geolocation.getCurrentPosition(
+          onSuccess,
+          onErrorFinal,
+          { enableHighAccuracy: false, timeout: 10000, maximumAge: isManual ? 0 : 10000 }
+        );
+      }
+
+      function onErrorFinal(error) {
+        console.warn('位置情報の取得に失敗しました:', error);
+        if (elements.btnRelocate) {
+          elements.btnRelocate.classList.remove('loading');
+          elements.btnRelocate.disabled = false;
+        }
+        showNotification('現在地の取得に失敗したか、時間がかかっています。手動で地図を動かしてください。', 'warning');
+      }
+
+      // まず高精度（スマホGPS用）で試行
+      navigator.geolocation.getCurrentPosition(
+        onSuccess,
+        onErrorHigh,
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: isManual ? 0 : 10000 }
       );
     }
 
