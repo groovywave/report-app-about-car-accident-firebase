@@ -2,9 +2,9 @@
 // ▼▼▼【重要】設定値を更新してください ▼▼▼
 const APP_SETTINGS = {
   // ★★★ ここにCloud FunctionsのURLを設定してください ★★★
-  CLOUD_FUNCTION_URL: 'https://asia-northeast1-patrol-reports-51501.cloudfunctions.net/report',
+  CLOUD_FUNCTION_URL: 'https://report-o6me7546wq-an.a.run.app',
   // ★★★ ここにLIFF IDを設定してください ★★★
-  LIFF_ID: '2010069743-9xjV32rf',
+  LIFF_ID: '2010242484-mtfoxuhe',
 
   MAX_RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000,
@@ -27,8 +27,21 @@ let elements = {};
 
 document.addEventListener('DOMContentLoaded', async function () {
   try {
-    // 設定値をAPP_SETTINGSから直接読み込む
-    CONFIG = { ...APP_SETTINGS };
+    // 1. 環境依存の設定値を取得（無ければデフォルトで続行）
+    let envConfig = {};
+    try {
+      const response = await fetch('/api/config', { cache: 'no-store' });
+      if (response.ok) {
+        envConfig = await response.json();
+      } else {
+        console.warn(`設定エンドポイントが見つかりませんでした: ${response.status} ${response.statusText} - デフォルト設定で起動します。`);
+      }
+    } catch (e) {
+      console.warn('設定エンドポイントの取得に失敗しました（オフライン/ローカル想定）: デフォルト設定で起動します。', e);
+    }
+
+    // 2. 固定的な設定値とマージして、最終的なCONFIGオブジェクトを完成させる。
+    CONFIG = { ...APP_SETTINGS, ...envConfig };
     console.log('アプリケーション設定が完了しました。：', CONFIG);
 
     // 要素の取得
@@ -42,8 +55,12 @@ document.addEventListener('DOMContentLoaded', async function () {
       btnSubmit: document.getElementById('btn-submit'),
       loader: document.getElementById('loader'),
       photoDistantInput: document.getElementById('photo-distant'),
+      btnAlbumDistant: document.getElementById('btn-album-distant'),
+      btnCameraDistant: document.getElementById('btn-camera-distant'),
       imagePreviewDistant: document.getElementById('image-preview-distant'),
       photoCloseInput: document.getElementById('photo-close'),
+      btnAlbumClose: document.getElementById('btn-album-close'),
+      btnCameraClose: document.getElementById('btn-camera-close'),
       imagePreviewClose: document.getElementById('image-preview-close'),
       lineStatus: document.getElementById('line-status'),
       lineStatusText: document.getElementById('line-status-text'),
@@ -92,7 +109,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         const profile = await liff.getProfile();
         lineUserId = profile.userId;
 
+        // ↓↓↓ この一行を追加する ↓↓↓
         console.log('【デバッグ用】取得したアクセストークン:', lineAccessToken);
+        // ↑↑↑ この一行を追加する ↑↑↑
 
         // 隠しフィールドに設定
         elements.accessTokenInput.value = lineAccessToken;
@@ -131,7 +150,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
   }
 
-  // === 地図初期化関数 ===
+  // === 地図初期化関数（1分以内スマホキャッシュ活用＆フォールバック取得版） ===
   function initializeMap(elements) {
     L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png', {
       attribution: "地理院タイル（GSI）",
@@ -148,12 +167,42 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     elements.map.on('move', updateCenterCoords);
-    updateCenterCoords();
 
-    // 位置情報取得関数
-    function fetchCurrentPosition(isManual = false) {
+    const CACHE_LIMIT_MS = 1 * 60 * 1000; // 1分（60,000ミリ秒）
+
+    // 1. ローカルストレージからの復元（1分以内優先、エラー時は過去位置もフォールバック利用）
+    function applyLocalStorageCache(ignoreTimeLimit = false) {
+      const cachedLat = localStorage.getItem('last_known_lat');
+      const cachedLng = localStorage.getItem('last_known_lng');
+      const cachedTime = parseInt(localStorage.getItem('last_known_time') || '0', 10);
+      const now = Date.now();
+
+      if (cachedLat && cachedLng) {
+        const isWithin1Min = (now - cachedTime < CACHE_LIMIT_MS);
+        if (isWithin1Min || ignoreTimeLimit) {
+          const lat = parseFloat(cachedLat);
+          const lng = parseFloat(cachedLng);
+          if (!isNaN(lat) && !isNaN(lng)) {
+            elements.map.setView([lat, lng], 18);
+            console.log(`スマホのlocalStorageキャッシュ（${isWithin1Min ? '1分以内' : '過去の記録'}）を適用しました:`, lat, lng);
+            return { success: true, isRecent: isWithin1Min };
+          }
+        }
+      }
+      return { success: false, isRecent: false };
+    }
+
+    const initialCache = applyLocalStorageCache(false);
+    if (!initialCache.success) {
+      updateCenterCoords();
+    }
+
+    // 2. 位置情報の取得（自動取得時は1分キャッシュ・ボタンタップ時は最新GPS強制取得）
+    function requestCurrentPosition(forceFresh = false) {
       if (!navigator.geolocation) {
-        showNotification('お使いのブラウザは位置情報サービスに対応していません。', 'warning');
+        if (!initialCache.success) {
+          showNotification('お使いのブラウザは位置情報サービスに対応していません。', 'warning');
+        }
         return;
       }
 
@@ -162,41 +211,87 @@ document.addEventListener('DOMContentLoaded', async function () {
         elements.btnRelocate.disabled = true;
       }
 
-      if (isManual) {
-        showNotification('現在地を取得中...', 'info', 2000);
+      const maxAge = forceFresh ? 0 : CACHE_LIMIT_MS;
+      const timeoutMs = forceFresh ? 20000 : 15000; // スマホ/LIFF用に余裕を持ったタイムアウト設定（15-20秒）
+
+      // 高精度オプション（手動タップ時はmaximumAge:0でリアルタイム計測）
+      const highAccOptions = {
+        enableHighAccuracy: true,
+        timeout: timeoutMs,
+        maximumAge: maxAge
+      };
+
+      // 低精度オプション（フォールバック用）
+      const lowAccOptions = {
+        enableHighAccuracy: false,
+        timeout: timeoutMs,
+        maximumAge: maxAge
+      };
+
+      function resetBtnState() {
+        if (elements.btnRelocate) {
+          elements.btnRelocate.classList.remove('loading');
+          elements.btnRelocate.disabled = false;
+        }
       }
 
-      navigator.geolocation.getCurrentPosition(
-        function (pos) {
-          elements.map.setView([pos.coords.latitude, pos.coords.longitude], 18);
-          if (elements.btnRelocate) {
-            elements.btnRelocate.classList.remove('loading');
-            elements.btnRelocate.disabled = false;
-          }
-          if (isManual) {
-            showNotification('最新の現在地を取得しました。', 'success');
-          }
-        },
-        function (error) {
-          console.warn('位置情報の取得に失敗しました:', error);
-          if (elements.btnRelocate) {
-            elements.btnRelocate.classList.remove('loading');
-            elements.btnRelocate.disabled = false;
-          }
-          showNotification('現在地の取得に失敗したか、時間がかかっています。手動で地図を動かしてください。', 'warning');
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: isManual ? 0 : 10000
+      function onSuccess(pos) {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        elements.map.setView([lat, lng], 18);
+
+        // タイムスタンプ付きでローカルストレージに保存
+        localStorage.setItem('last_known_lat', lat);
+        localStorage.setItem('last_known_lng', lng);
+        localStorage.setItem('last_known_time', Date.now());
+
+        resetBtnState();
+
+        if (forceFresh) {
+          showNotification('最新の現在地を取得しました。', 'success');
         }
-      );
+        console.log('現在位置の取得に成功しました:', lat, lng, `(精度: ${pos.coords.accuracy}m)`);
+      }
+
+      function onErrorHigh(err) {
+        console.warn('高精度での現在地取得に失敗。低精度設定で再試行します:', err);
+        navigator.geolocation.getCurrentPosition(onSuccess, onErrorFinal, lowAccOptions);
+      }
+
+      function onErrorFinal(err) {
+        resetBtnState();
+
+        console.warn('現在地の取得に失敗しました:', err);
+
+        // まず1分以内のキャッシュを探す
+        let cacheResult = applyLocalStorageCache(false);
+        if (cacheResult.success) {
+          showNotification('最新位置の取得に失敗したため、1分以内のキャッシュ位置を表示しています。', 'info');
+          return;
+        }
+
+        // 1分以内のキャッシュが無ければ、過去の保存位置でも復元を試みる
+        cacheResult = applyLocalStorageCache(true);
+        if (cacheResult.success) {
+          showNotification('現在地の自動取得に失敗したため、前回記録された位置を表示しています。手動で微調整してください。', 'warning');
+          return;
+        }
+
+        // キャッシュが全く存在しない（初起動時など）場合のエラー表示
+        let message = '現在地の取得に失敗しました。手動で地図を動かして位置を調整してください。';
+        if (err.code === err.PERMISSION_DENIED) {
+          message = '位置情報の利用が許可されていません。スマホ・LINEの「位置情報」設定をご確認ください。';
+        }
+        showNotification(message, 'warning');
+      }
+
+      navigator.geolocation.getCurrentPosition(onSuccess, onErrorHigh, highAccOptions);
     }
 
-    // アプリ起動時に自動で現在地を取得
-    fetchCurrentPosition(false);
+    // 初回の自動取得を実行
+    requestCurrentPosition(false);
 
-    // 「現在地取得」ボタンのイベントリスナー
+    // 手動再取得ボタンのイベントリスナー（Leafletマップによるイベント遮断を防止）
     if (elements.btnRelocate) {
       if (typeof L !== 'undefined' && L.DomEvent) {
         L.DomEvent.disableClickPropagation(elements.btnRelocate);
@@ -206,7 +301,9 @@ document.addEventListener('DOMContentLoaded', async function () {
       elements.btnRelocate.addEventListener('click', function (e) {
         e.stopPropagation();
         e.preventDefault();
-        fetchCurrentPosition(true);
+        console.log('現在地取得ボタンがタップされました');
+        showNotification('現在地を取得中...', 'info', 2000);
+        requestCurrentPosition(true);
       });
     }
   }
@@ -253,10 +350,35 @@ document.addEventListener('DOMContentLoaded', async function () {
     // 初期状態のチェックも実行（必須表示含めて更新）
     handleTypeChange();
 
-    // 写真プレビュー
+    // 写真選択・カメラ起動ボタンのイベントリスナー
+    if (elements.btnAlbumDistant && elements.photoDistantInput) {
+      elements.btnAlbumDistant.addEventListener('click', function () {
+        elements.photoDistantInput.removeAttribute('capture');
+        elements.photoDistantInput.click();
+      });
+    }
+    if (elements.btnCameraDistant && elements.photoDistantInput) {
+      elements.btnCameraDistant.addEventListener('click', function () {
+        elements.photoDistantInput.setAttribute('capture', 'environment');
+        elements.photoDistantInput.click();
+      });
+    }
     if (elements.photoDistantInput) {
       elements.photoDistantInput.addEventListener('change', function () {
         handlePhotoInput(this, 'distant', elements);
+      });
+    }
+
+    if (elements.btnAlbumClose && elements.photoCloseInput) {
+      elements.btnAlbumClose.addEventListener('click', function () {
+        elements.photoCloseInput.removeAttribute('capture');
+        elements.photoCloseInput.click();
+      });
+    }
+    if (elements.btnCameraClose && elements.photoCloseInput) {
+      elements.btnCameraClose.addEventListener('click', function () {
+        elements.photoCloseInput.setAttribute('capture', 'environment');
+        elements.photoCloseInput.click();
       });
     }
     if (elements.photoCloseInput) {
@@ -393,100 +515,58 @@ document.addEventListener('DOMContentLoaded', async function () {
     setTimeout(() => notification.remove(), duration);
   }
 
-  // 画像をビットマップ化してから再エンコード（JPEG）する共通関数
-  async function bitmapizeAndEncode(fileOrDataUrl, options = {}) {
-    const { maxWidth = 1280, maxHeight = 1280, quality = 0.85, mimeType = 'image/jpeg', background = '#fff' } = options;
-
-    let srcBlob;
-    if (fileOrDataUrl instanceof Blob) {
-      srcBlob = fileOrDataUrl;
-    } else if (typeof fileOrDataUrl === 'string') {
-      const res = await fetch(fileOrDataUrl);
-      srcBlob = await res.blob();
-    } else {
-      throw new Error('bitmapizeAndEncode: 未対応の入力タイプです');
-    }
-
-    let bmp, width, height;
-    try {
-      bmp = await createImageBitmap(srcBlob, { imageOrientation: 'from-image' });
-      width = bmp.width;
-      height = bmp.height;
-    } catch {
-      const url = URL.createObjectURL(srcBlob);
-      try {
-        const img = await new Promise((resolve, reject) => {
-          const i = new Image();
-          i.onload = () => resolve(i);
-          i.onerror = reject;
-          i.src = url;
-        });
-        width = img.naturalWidth || img.width;
-        height = img.naturalHeight || img.height;
-
-        const cvs = document.createElement('canvas');
-        cvs.width = width;
-        cvs.height = height;
-        const ctx = cvs.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-
-        if (window.createImageBitmap) {
-          bmp = await createImageBitmap(cvs);
-        } else {
-          bmp = cvs;
-        }
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    }
-
-    let targetW = width;
-    let targetH = height;
-    if (targetW > targetH) {
-      if (targetW > maxWidth) {
-        targetH = Math.round((maxWidth / targetW) * targetH);
-        targetW = maxWidth;
-      }
-    } else {
-      if (targetH > maxHeight) {
-        targetW = Math.round((maxHeight / targetH) * targetW);
-        targetH = maxHeight;
-      }
-    }
-
-    const hasOffscreen = typeof OffscreenCanvas !== 'undefined';
-    const cvs = hasOffscreen ? new OffscreenCanvas(targetW, targetH) : document.createElement('canvas');
-    if (!hasOffscreen) {
-      cvs.width = targetW;
-      cvs.height = targetH;
-    }
-    const ctx = cvs.getContext('2d');
-
-    ctx.clearRect(0, 0, targetW, targetH);
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = background;
-    ctx.fillRect(0, 0, targetW, targetH);
-    ctx.drawImage(bmp, 0, 0, targetW, targetH);
-
-    if (cvs.convertToBlob) {
-      const blob = await cvs.convertToBlob({ type: mimeType, quality });
-      return await blobToDataURL(blob);
-    } else {
-      const dataUrl = cvs.toDataURL(mimeType, quality);
-      return dataUrl;
-    }
-  }
-
-  function blobToDataURL(blob) {
+  // 画像をキャンバスで縮小し、JPEGのDataURL形式で取得する共通関数
+  function resizeAndEncodeImage(file, options = {}) {
+    const { maxWidth = 1280, maxHeight = 1280, quality = 0.85 } = options;
     return new Promise((resolve, reject) => {
-      const fr = new FileReader();
-      fr.onload = () => resolve(fr.result);
-      fr.onerror = reject;
-      fr.readAsDataURL(blob);
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = function () {
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
+
+        // アスペクト比を維持して縮小
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((maxWidth / width) * height);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((maxHeight / height) * width);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        // 背景を白で塗りつぶす（透明部分対策）
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        try {
+          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          URL.revokeObjectURL(url);
+          resolve(dataUrl);
+        } catch (err) {
+          URL.revokeObjectURL(url);
+          reject(err);
+        }
+      };
+      img.onerror = function (err) {
+        URL.revokeObjectURL(url);
+        reject(new Error('画像の読み込みに失敗しました。'));
+      };
+      img.src = url;
     });
   }
 
-  // 写真データ更新
+  // 写真データ更新（統合版）
   function updatePhoto(data, mimeType, type, elements) {
     currentPhotos[type].data = data;
     currentPhotos[type].mimeType = mimeType;
@@ -501,6 +581,8 @@ document.addEventListener('DOMContentLoaded', async function () {
       previewEl.style.display = 'none';
     }
     if (inputEl) inputEl.value = '';
+
+    updateSubmitButtonState();
   }
 
   // === 写真入力処理（画像圧縮機能付き） ===
@@ -508,28 +590,36 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (input.files && input.files[0]) {
       const file = input.files[0];
 
+      // 元ファイルサイズのチェックはそのまま活かす
       if (file.size > CONFIG.MAX_FILE_SIZE) {
-        showNotification('ファイルサイズが大きすぎます。10MB以下のファイルを選択してください。', 'error');
+        showNotification('ファイルサイズが大きすぎます。5MB以下のファイルを選択してください。', 'error');
         updatePhoto(null, null, type, elements);
         return;
       }
 
-      if (!CONFIG.ALLOWED_FILE_TYPES.includes(file.type)) {
+      // ファイル形式のチェック（MIMEタイプ、または拡張子で判定）
+      const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic'];
+      const fileExtension = file.name ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
+      const isAllowedType = CONFIG.ALLOWED_FILE_TYPES.includes(file.type) || 
+                            allowedExtensions.includes(fileExtension) || 
+                            file.type === '' || 
+                            file.type === 'application/octet-stream';
+
+      if (!isAllowedType) {
         showNotification('対応していないファイル形式です。', 'error');
         updatePhoto(null, null, type, elements);
         return;
       }
 
-      bitmapizeAndEncode(file, {
+      // キャンバスによる縮小・再エンコード
+      resizeAndEncodeImage(file, {
         maxWidth: 1280,
         maxHeight: 1280,
-        quality: 0.85,
-        mimeType: 'image/jpeg',
-        background: '#fff'
+        quality: 0.85
       })
         .then((compressedBase64) => {
           updatePhoto(compressedBase64, 'image/jpeg', type, elements);
-          console.log(`画像再エンコード完了（bitmap→jpeg, ${type}）: ${Math.round(compressedBase64.length / 1024)} KB`);
+          console.log(`画像再エンコード完了（jpeg, ${type}）: ${Math.round(compressedBase64.length / 1024)} KB`);
         })
         .catch((err) => {
           console.error(err);
@@ -539,35 +629,25 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
   }
 
-  // === フォーム送信処理 ===
+  // === フォーム送信処理（修正版） ===
   async function handleFormSubmission(formData, elements) {
     try {
       setSubmissionState(true, elements);
 
+      // バリデーション
       const validation = validateFormData(formData);
       if (!validation.isValid) {
         throw new Error(validation.message);
       }
 
+      // データ送信
       const result = await sendDataWithRetry(formData);
 
+      // 成功処理
       showNotification('通報を受け付けました。ご協力ありがとうございます。', 'success');
-
-      elements.btnSubmit.dataset.success = 'true';
-      elements.btnSubmit.disabled = true;
-      elements.btnSubmit.textContent = '通報ありがとうございました';
-
       elements.form.reset();
       updatePhoto(null, null, 'distant', elements);
       updatePhoto(null, null, 'close', elements);
-
-      setTimeout(() => {
-        delete elements.btnSubmit.dataset.success;
-        updateSubmitButtonState();
-
-        console.log('window.close() を実行します。');
-        window.close();
-      }, 2000);
 
     } catch (error) {
       console.error('送信エラー:', error);
@@ -591,6 +671,12 @@ document.addEventListener('DOMContentLoaded', async function () {
       }
     }
 
+    // 写真投稿の必須バリデーション（遠景・近景の両方が必須）
+    if (!currentPhotos.distant.data || !currentPhotos.close.data) {
+      return { isValid: false, message: '写真の投稿が必要です。遠景および近景の両方の写真を必ずアップロードしてください。' };
+    }
+
+    // 「その他」が選択されている場合のみ、詳細を必須チェックする
     if (formData.get('type') === 'その他') {
       const details = formData.get('details');
       if (!details || details.trim() === '') {
@@ -598,6 +684,7 @@ document.addEventListener('DOMContentLoaded', async function () {
       }
     }
 
+    // 詳細の文字数上限チェック（入力がある場合）
     const detailsAll = formData.get('details') || '';
     const detailsLength = Array.from(detailsAll).length;
     const limit = CONFIG.DETAILS_MAX_LENGTH ?? 100;
@@ -624,7 +711,7 @@ document.addEventListener('DOMContentLoaded', async function () {
       }
       const currentAccessToken = liff.getAccessToken();
       if (!currentAccessToken) {
-        throw new Error('LINEの認証情報が取得できませんでした。');
+        throw new Error('LINEの認証情報が取得できませんでした。')
       }
 
       const payload = {
@@ -636,8 +723,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         photoMimeTypeDistant: currentPhotos.distant.mimeType,
         photoDataClose: currentPhotos.close.data,
         photoMimeTypeClose: currentPhotos.close.mimeType,
-        accessToken: currentAccessToken,
-        userId: lineUserId,
+        accessToken: currentAccessToken, // アクセストークンを送信
+        userId: lineUserId, // ユーザーIDも送信（参考用）
         timestamp: new Date().toISOString()
       };
 
@@ -648,7 +735,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         method: 'POST',
         body: JSON.stringify(payload),
         headers: { 'Content-Type': 'application/json' },
-        mode: 'cors',
+        // mode: 'cors', // Cloud FunctionsはCORS対応が必要
         signal: controller.signal
       });
       clearTimeout(timeoutId);
@@ -689,28 +776,40 @@ document.addEventListener('DOMContentLoaded', async function () {
     const formElements = elements.form.querySelectorAll('input, select, textarea, button');
     formElements.forEach(el => el.disabled = isSending);
 
+    // 送信状態変更後にもボタン表示テキストを適切に更新
     if (!isSending) updateSubmitButtonState();
   }
 
+  // 送信ボタンの活性/非活性とテキストを更新
   function updateSubmitButtonState() {
     if (!elements?.form || !elements?.btnSubmit) return;
-
-    if (elements.btnSubmit.dataset.success === 'true') {
-      elements.btnSubmit.disabled = true;
-      elements.btnSubmit.textContent = '通報ありがとうございました';
-      return;
-    }
-
+    // 送信中は一律で制御しない
     if (elements.loader?.classList.contains('sending')) return;
 
     const formData = new FormData(elements.form);
     const selectedType = formData.get('type');
     const isOther = selectedType === 'その他';
     const detailsVal = (elements.detailsTextarea?.value || '').trim();
+    const hasDistant = !!currentPhotos.distant.data;
+    const hasClose = !!currentPhotos.close.data;
+    const hasBothPhotos = hasDistant && hasClose;
 
-    const canSubmit = selectedType && (!isOther || (isOther && detailsVal.length > 0));
+    const canSubmit = selectedType && (!isOther || (isOther && detailsVal.length > 0)) && hasBothPhotos;
 
     elements.btnSubmit.disabled = !canSubmit;
-    elements.btnSubmit.textContent = canSubmit ? 'この内容で通報する' : '不具合の種類を選択してください';
+
+    if (!selectedType) {
+      elements.btnSubmit.textContent = '連絡状況を選択してください';
+    } else if (isOther && detailsVal.length === 0) {
+      elements.btnSubmit.textContent = '詳細を入力してください';
+    } else if (!hasDistant && !hasClose) {
+      elements.btnSubmit.textContent = '遠景と近景の写真をアップロードしてください';
+    } else if (!hasDistant) {
+      elements.btnSubmit.textContent = '遠景写真をアップロードしてください';
+    } else if (!hasClose) {
+      elements.btnSubmit.textContent = '近景写真をアップロードしてください';
+    } else {
+      elements.btnSubmit.textContent = 'この内容で通報する';
+    }
   }
 });
