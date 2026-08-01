@@ -72,8 +72,8 @@ document.addEventListener('DOMContentLoaded', async function () {
       typeRadios: document.querySelectorAll('input[name="type"]') // 異常の種類ラジオボタン（すべて）
     };
 
-    // === LIFF初期化 ===
-    initializeLIFF();
+    // === LIFF初期化（完了を待ってから地図を初期化） ===
+    await initializeLIFF();
 
     // === 地図の初期化 ===
     initializeMap(elements);
