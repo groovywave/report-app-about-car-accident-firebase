@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     // 要素の取得
     elements = {
       map: L.map('map').setView([36.56731, 139.74215], 16),
+      mapLoader: document.getElementById('map-loader'),
       coordsDisplay: document.getElementById('coords-display'),
       latInput: document.getElementById('latitude'),
       lngInput: document.getElementById('longitude'),
@@ -172,12 +173,24 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     // 既存機能：アプリ起動時に自動で現在地を取得する
     if (navigator.geolocation) {
+      if (elements.mapLoader) {
+        elements.mapLoader.classList.remove('hidden');
+      }
       navigator.geolocation.getCurrentPosition(
         function (pos) {
+          if (elements.map) {
+            elements.map.invalidateSize();
+          }
           elements.map.setView([pos.coords.latitude, pos.coords.longitude], 18);
+          if (elements.mapLoader) {
+            elements.mapLoader.classList.add('hidden');
+          }
         },
         function (error) {
           console.warn('位置情報の取得に失敗しました:', error);
+          if (elements.mapLoader) {
+            elements.mapLoader.classList.add('hidden');
+          }
           showNotification('現在地の取得に失敗したか、時間がかかっています。手動で地図を動かしてください。', 'warning');
         },
         {
@@ -186,6 +199,10 @@ document.addEventListener('DOMContentLoaded', async function () {
           maximumAge: 10000
         }
       );
+    } else {
+      if (elements.mapLoader) {
+        elements.mapLoader.classList.add('hidden');
+      }
     }
 
   }
