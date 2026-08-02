@@ -50,6 +50,7 @@ textarea::placeholder { color: #6c757d; font-style: italic; }
 .button-like-input.album-btn:hover { background-color: #374151; }
 .button-like-input.camera-btn { background-color: #059669; } /* カメラはグリーン */
 .button-like-input.camera-btn:hover { background-color: #047857; }
+.hidden-file-input { display: none; }
 
 /* ===== 画像プレビュー ===== */
 #image-preview-distant, #image-preview-close { display: none; max-width: 100%; height: auto; border-radius: 8px; border: 2px solid #e9ecef; margin-top: 15px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
