@@ -232,17 +232,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     // 初期状態のチェックも実行（必須表示含めて更新）
     handleTypeChange();
 
-    // 写真選択・カメラ起動ボタンのイベントリスナー
-    if (elements.btnAlbumDistant && elements.photoDistantInput) {
-      elements.btnAlbumDistant.addEventListener('click', function () {
-        elements.photoDistantInput.click();
-      });
-    }
-    if (elements.btnCameraDistant && elements.cameraDistantInput) {
-      elements.btnCameraDistant.addEventListener('click', function () {
-        elements.cameraDistantInput.click();
-      });
-    }
+    // 写真選択・カメラ起動のファイル選択時（change）イベントリスナー
     if (elements.photoDistantInput) {
       elements.photoDistantInput.addEventListener('change', function () {
         handlePhotoInput(this, 'distant', elements);
@@ -254,16 +244,6 @@ document.addEventListener('DOMContentLoaded', async function () {
       });
     }
 
-    if (elements.btnAlbumClose && elements.photoCloseInput) {
-      elements.btnAlbumClose.addEventListener('click', function () {
-        elements.photoCloseInput.click();
-      });
-    }
-    if (elements.btnCameraClose && elements.cameraCloseInput) {
-      elements.btnCameraClose.addEventListener('click', function () {
-        elements.cameraCloseInput.click();
-      });
-    }
     if (elements.photoCloseInput) {
       elements.photoCloseInput.addEventListener('change', function () {
         handlePhotoInput(this, 'close', elements);
