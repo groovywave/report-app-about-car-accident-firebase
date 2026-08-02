@@ -9,7 +9,7 @@ const APP_SETTINGS = {
   MAX_RETRY_ATTEMPTS: 3,
   RETRY_DELAY: 1000,
   REQUEST_TIMEOUT: 30000,
-  MAX_FILE_SIZE: 10 * 1024 * 1024,
+  MAX_FILE_SIZE: 30 * 1024 * 1024,
   ALLOWED_FILE_TYPES: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
   DETAILS_MAX_LENGTH: 100
 };
@@ -439,7 +439,6 @@ document.addEventListener('DOMContentLoaded', async function () {
     currentPhotos[type].data = data;
     currentPhotos[type].mimeType = mimeType;
     const previewEl = type === 'distant' ? elements.imagePreviewDistant : elements.imagePreviewClose;
-    const inputEl = type === 'distant' ? elements.photoDistantInput : elements.photoCloseInput;
 
     if (data && mimeType) {
       previewEl.src = data;
@@ -448,7 +447,12 @@ document.addEventListener('DOMContentLoaded', async function () {
       previewEl.src = '#';
       previewEl.style.display = 'none';
     }
-    if (inputEl) inputEl.value = '';
+
+    // 次回のファイル選択・カメラ撮影（changeイベント）が確実に発火するように全てのinputをリセット
+    if (elements.photoDistantInput) elements.photoDistantInput.value = '';
+    if (elements.cameraDistantInput) elements.cameraDistantInput.value = '';
+    if (elements.photoCloseInput) elements.photoCloseInput.value = '';
+    if (elements.cameraCloseInput) elements.cameraCloseInput.value = '';
 
     updateSubmitButtonState();
   }
@@ -458,19 +462,21 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (input.files && input.files[0]) {
       const file = input.files[0];
 
-      // 元ファイルサイズのチェックはそのまま活かす
-      if (file.size > CONFIG.MAX_FILE_SIZE) {
-        showNotification('ファイルサイズが大きすぎます。5MB以下のファイルを選択してください。', 'error');
+      // 元ファイルサイズのチェック（高解像度スマホカメラ写真用に30MBまで許容）
+      const maxLimit = CONFIG.MAX_FILE_SIZE || (30 * 1024 * 1024);
+      if (file.size > maxLimit) {
+        showNotification('ファイルサイズが大きすぎます。30MB以下の写真を選択してください。', 'error');
         updatePhoto(null, null, type, elements);
         return;
       }
 
       // ファイル形式のチェック（MIMEタイプ、または拡張子で判定）
-      const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic'];
+      const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
       const fileExtension = file.name ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
       const isAllowedType = CONFIG.ALLOWED_FILE_TYPES.includes(file.type) || 
                             allowedExtensions.includes(fileExtension) || 
                             file.type === '' || 
+                            file.type.startsWith('image/') ||
                             file.type === 'application/octet-stream';
 
       if (!isAllowedType) {
