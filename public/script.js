@@ -54,10 +54,12 @@ document.addEventListener('DOMContentLoaded', async function () {
       btnSubmit: document.getElementById('btn-submit'),
       loader: document.getElementById('loader'),
       photoDistantInput: document.getElementById('photo-distant'),
+      cameraDistantInput: document.getElementById('camera-distant-input'),
       btnAlbumDistant: document.getElementById('btn-album-distant'),
       btnCameraDistant: document.getElementById('btn-camera-distant'),
       imagePreviewDistant: document.getElementById('image-preview-distant'),
       photoCloseInput: document.getElementById('photo-close'),
+      cameraCloseInput: document.getElementById('camera-close-input'),
       btnAlbumClose: document.getElementById('btn-album-close'),
       btnCameraClose: document.getElementById('btn-camera-close'),
       imagePreviewClose: document.getElementById('image-preview-close'),
@@ -233,14 +235,12 @@ document.addEventListener('DOMContentLoaded', async function () {
     // 写真選択・カメラ起動ボタンのイベントリスナー
     if (elements.btnAlbumDistant && elements.photoDistantInput) {
       elements.btnAlbumDistant.addEventListener('click', function () {
-        elements.photoDistantInput.removeAttribute('capture');
         elements.photoDistantInput.click();
       });
     }
-    if (elements.btnCameraDistant && elements.photoDistantInput) {
+    if (elements.btnCameraDistant && elements.cameraDistantInput) {
       elements.btnCameraDistant.addEventListener('click', function () {
-        elements.photoDistantInput.setAttribute('capture', 'environment');
-        elements.photoDistantInput.click();
+        elements.cameraDistantInput.click();
       });
     }
     if (elements.photoDistantInput) {
@@ -248,21 +248,29 @@ document.addEventListener('DOMContentLoaded', async function () {
         handlePhotoInput(this, 'distant', elements);
       });
     }
+    if (elements.cameraDistantInput) {
+      elements.cameraDistantInput.addEventListener('change', function () {
+        handlePhotoInput(this, 'distant', elements);
+      });
+    }
 
     if (elements.btnAlbumClose && elements.photoCloseInput) {
       elements.btnAlbumClose.addEventListener('click', function () {
-        elements.photoCloseInput.removeAttribute('capture');
         elements.photoCloseInput.click();
       });
     }
-    if (elements.btnCameraClose && elements.photoCloseInput) {
+    if (elements.btnCameraClose && elements.cameraCloseInput) {
       elements.btnCameraClose.addEventListener('click', function () {
-        elements.photoCloseInput.setAttribute('capture', 'environment');
-        elements.photoCloseInput.click();
+        elements.cameraCloseInput.click();
       });
     }
     if (elements.photoCloseInput) {
       elements.photoCloseInput.addEventListener('change', function () {
+        handlePhotoInput(this, 'close', elements);
+      });
+    }
+    if (elements.cameraCloseInput) {
+      elements.cameraCloseInput.addEventListener('change', function () {
         handlePhotoInput(this, 'close', elements);
       });
     }
